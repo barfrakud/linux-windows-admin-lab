@@ -1,7 +1,7 @@
 ﻿# lab-ssh-tunnel-connect.ps1
 # Łączy z maszynami laboratoryjnymi przez Proxmox jako jump host.
 # Windows VMs  → tunel RDP (mstsc) na localhost:<port>
-# Linux LXC    → nowe okno terminala z sesją SSH
+# Linux hosts  → nowe okno terminala z sesją SSH
 #
 # Wymaganie wstępne: działający ssh server na każdej linuxowej maszynie i włączona opcja PermitRootLogin yes - tylko w środowisku testowym!
 # Uruchomienie: .\lab-ssh-tunnel-connect.ps1
@@ -27,8 +27,9 @@ $WindowsVMs = @(
     [PSCustomObject]@{ Name = "win-mgmt01"; IP = "10.10.10.11"; RdpPort = 3389; LocalPort = 23111 }
 )
 
-$LinuxLXCs = @(
+$LinuxSSHHosts = @(
     [PSCustomObject]@{ Name = "rhel-srv01";  IP = "10.10.10.20"; User = "root" },
+    [PSCustomObject]@{ Name = "rhel-web01";  IP = "10.10.10.21"; User = "root" },
     [PSCustomObject]@{ Name = "ubuntu-ws01"; IP = "10.10.10.30"; User = "root" },
     [PSCustomObject]@{ Name = "ipa-srv01";   IP = "10.10.10.40"; User = "root" },
     [PSCustomObject]@{ Name = "repo-srv01";  IP = "10.10.10.50"; User = "root" }
@@ -62,7 +63,7 @@ function Initialize-HostAvailability {
     Write-Host "    Sprawdzanie dostepnosci maszyn przez Proxmox..." -ForegroundColor DarkGray
     $checks = @()
     foreach ($vm  in $WindowsVMs) { $checks += "$($vm.IP):$($vm.RdpPort)" }
-    foreach ($lxc in $LinuxLXCs)  { $checks += "$($lxc.IP):22" }
+    foreach ($linuxHost in $LinuxSSHHosts) { $checks += "$($linuxHost.IP):22" }
     $checkList = $checks -join " "
     $sshCmd = "for entry in $checkList; do ip=`${entry%:*}; port=`${entry#*:}; (echo > /dev/tcp/`$ip/`$port) 2>/dev/null; echo `$ip:`$?; done"
     $output = & ssh -o "ConnectTimeout=10" -o "StrictHostKeyChecking=accept-new" $PROXMOX $sshCmd 2>&1
@@ -177,14 +178,14 @@ function Invoke-SSHKeySetup {
     }
     Write-Status "[OK]   " "Proxmox - polaczenie bez hasla dziala" "Green"
 
-    # Deploy key to each Linux LXC via ProxyJump
-    Write-Header "Klucze SSH do kontenerow Linux"
-    Write-Host "    Dla kazdego kontenera wpisz haslo root (raz na maszyne)." -ForegroundColor DarkGray
+    # Deploy key to each Linux host via ProxyJump
+    Write-Header "Klucze SSH do hostow Linux"
+    Write-Host "    Dla kazdego hosta wpisz haslo root (raz na maszyne)." -ForegroundColor DarkGray
     Write-Host ""
 
-    foreach ($lxc in $LinuxLXCs) {
-        Write-Host "    $($lxc.Name) ($($lxc.IP))..." -NoNewline -ForegroundColor DarkGray
-        $lxcTarget = "$($lxc.User)@$($lxc.IP)"
+    foreach ($linuxHost in $LinuxSSHHosts) {
+        Write-Host "    $($linuxHost.Name) ($($linuxHost.IP))..." -NoNewline -ForegroundColor DarkGray
+        $lxcTarget = "$($linuxHost.User)@$($linuxHost.IP)"
 
         # First check if key already works
         $alreadyOk = & ssh -o "BatchMode=yes" -o "ConnectTimeout=5" -o "StrictHostKeyChecking=accept-new" `
@@ -200,9 +201,9 @@ function Invoke-SSHKeySetup {
             "mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '$pubKey' >> ~/.ssh/authorized_keys && sort -u ~/.ssh/authorized_keys -o ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && echo OK"
 
         if ($result -contains "OK") {
-            Write-Status "[OK]   " "$($lxc.Name) - klucz dodany" "Green"
+            Write-Status "[OK]   " "$($linuxHost.Name) - klucz dodany" "Green"
         } else {
-            Write-Status "[SKIP] " "$($lxc.Name) - nie udalo sie (offline?)" "DarkGray"
+            Write-Status "[SKIP] " "$($linuxHost.Name) - nie udalo sie (offline?)" "DarkGray"
         }
     }
 
@@ -220,7 +221,7 @@ if ($SetupKeys) { Invoke-SSHKeySetup }
 Write-Host ""
 Write-Host "  ╔══════════════════════════════════════════╗" -ForegroundColor Cyan
 Write-Host "  ║   lab-ssh-tunnel-connect                 ║" -ForegroundColor Cyan
-Write-Host "  ║   win-linux-admin-lab  •  Proxmox lab    ║" -ForegroundColor Cyan
+Write-Host "  ║   linux-windows-admin-lab • Proxmox lab  ║" -ForegroundColor Cyan
 Write-Host "  ╚══════════════════════════════════════════╝" -ForegroundColor Cyan
 
 # 1. Sprawdź Proxmox
@@ -247,9 +248,9 @@ foreach ($vm in $WindowsVMs) {
     }
 }
 
-# 3. Linux LXC — okna SSH
-Write-Header "Linux LXC — sesje SSH"
-foreach ($lxc in $LinuxLXCs) {
+# 3. Linux hosts — okna SSH
+Write-Header "Linux hosts — sesje SSH"
+foreach ($lxc in $LinuxSSHHosts) {
     Write-Host "    $($lxc.Name) ($($lxc.IP))..." -NoNewline -ForegroundColor DarkGray
     if (Test-HostAvailable -IP $lxc.IP) {
         Write-Host " dostępna" -ForegroundColor Green

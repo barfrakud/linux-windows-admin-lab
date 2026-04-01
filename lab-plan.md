@@ -50,10 +50,10 @@
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│  ALIENWARE M16 — bare metal                          │
+│  ALIENWARE M16 — bare metal                         │
 │  CPU: i7-13700HX (16C/24T) | RAM: 16 GB | SSD: 1 TB │
 ├─────────────────────────────────────────────────────┤
-│  Proxmox VE 9 — bare metal hypervisor                │
+│  Proxmox VE 9 — bare metal hypervisor               │
 │  IP: 10.28.0.200 | Storage: local-lvm (1 TB SSD)    │
 ├─────────────────────────────────────────────────────┤
 │                                                     │
@@ -64,21 +64,29 @@
 │  │ 4 GB | 40 GB     │   │ 4 GB | 60 GB     │        │
 │  └──────────────────┘   └──────────────────┘        │
 │                                                     │
-│  ┌──────────────────┐   ┌──────────────────┐       │
-│  │ LXC: rhel-srv01  │   │ LXC: ubuntu-ws01 │       │
-│  │ Rocky Linux 9    │   │ Ubuntu 22.04 LTS │       │
-│  │ Apache, MySQL    │   │ AD-joined client │        │
-│  │ Bind, LDAP       │   │ 1 GB | 10 GB     │        │
-│  │ 1.5 GB | 15 GB   │   └──────────────────┘        │
-│  └──────────────────┘                                │
-│                                                     │
-│  ┌──────────────────┐   ┌──────────────────┐       │
-│  │ LXC: ipa-srv01   │   │ LXC: repo-srv01  │       │
+│  ┌──────────────────┐   ┌──────────────────┐        │
+│  │ LXC: rhel-srv01  │   │ VM: rhel-web01   │        │
 │  │ Rocky Linux 9    │   │ Rocky Linux 9    │        │
-│  │ FreeIPA Server   │   │ Local yum/apt    │        │
-│  │ LDAP, Kerberos   │   │ ClamAV, Lynis    │        │
+│  │ Bind DNS, MySQL  │   │ Apache, TLS      │        │
+│  │ LDAP             │   │ SELinux, proxy   │        │
 │  │ 1.5 GB | 15 GB   │   │ 1 GB | 20 GB     │        │
 │  └──────────────────┘   └──────────────────┘        │
+│                                                     │
+│  ┌──────────────────┐   ┌──────────────────┐        │
+│  │ LXC: ubuntu-ws01 │   │ LXC: ipa-srv01   │        │
+│  │ Ubuntu 22.04 LTS │   │ Rocky Linux 9    │        │
+│  │ AD-joined client │   │ FreeIPA Server   │        │
+│  │ 1 GB | 10 GB     │   │ LDAP, Kerberos   │        │
+│  └──────────────────┘   │ 1.5 GB | 15 GB   │        │
+│                         └──────────────────┘        │
+│                                                     │
+│  ┌──────────────────┐                               │
+│  │ LXC: repo-srv01  │                               │
+│  │ Rocky Linux 9    │                               │
+│  │ Local yum/apt    │                               │
+│  │ ClamAV, Lynis    │                               │
+│  │ 1 GB | 20 GB     │                               │
+│  └──────────────────┘                               │
 │                                                     │
 │  vmbr10 (10.10.10.0/24) — lab-internal, NAT         │
 │  Gateway: Proxmox host (10.10.10.1 / 10.28.0.200)   │
@@ -92,8 +100,9 @@
 |---------|-----|------|------|
 | win-dc01 | 10.10.10.10 | win-dc01.lab.local | AD DC, DNS |
 | win-mgmt01 | 10.10.10.11 | win-mgmt01.lab.local | Windows 11 management — RSAT, PowerShell, Centrify workflow emulation |
-| rhel-srv01 | 10.10.10.20 | rhel-srv01.lab.local | Services server (Apache, MySQL, Bind, LDAP) |
-| ubuntu-ws01 | 10.10.10.30 | ubuntu-ws01.lab.local | Ubuntu client, AD-joined |
+| rhel-srv01 | 10.10.10.20 | rhel-srv01.linux.lab.local | Bind DNS, MySQL, LDAP |
+| rhel-web01 | 10.10.10.21 | rhel-web01.linux.lab.local | Apache, TLS, reverse proxy, SELinux |
+| ubuntu-ws01 | 10.10.10.30 | ubuntu-ws01.linux.lab.local | Ubuntu client, AD-joined |
 | ipa-srv01 | 10.10.10.40 | ipa-srv01.lab.local | FreeIPA server |
 | repo-srv01 | 10.10.10.50 | repo-srv01.lab.local | Repo mirror, anti-malware |
 
@@ -103,11 +112,12 @@
 |---------|-----|-----|-------|
 | win-dc01 | VM (QEMU) | 4 GB | Windows Server 2022 |
 | win-mgmt01 | VM (QEMU) | 4 GB | Windows 11 — RSAT, PowerShell 7 |
-| rhel-srv01 | LXC | 1.5 GB | Multiple services |
+| rhel-srv01 | LXC | 1.5 GB | Bind DNS, MySQL, LDAP |
+| rhel-web01 | VM (QEMU) | 1 GB | Apache, TLS, SELinux (full VM required) |
 | ubuntu-ws01 | LXC | 1 GB | CLI only |
 | ipa-srv01 | LXC | 1.5 GB | FreeIPA — if problematic, switch to VM |
 | repo-srv01 | LXC | 1 GB | Lightweight |
-| **Total** | | **13 GB** | ~3 GB left for Proxmox host |
+| **Total** | | **14 GB** | ~2 GB left for Proxmox host |
 
 Note on FreeIPA on LXC: FreeIPA requires systemd. If issues arise, use an unprivileged LXC with `nesting=1`, or replace with a lightweight VM.
 
@@ -183,7 +193,7 @@ Each exercise has an identifier `LAB-XX` and follows this structure:
 
 ---
 
-#### LAB-02: Apache Web Server with hardening
+#### LAB-02: Apache Web Server with hardening ✅ COMPLETE
 
 **Scenario:** A dedicated Rocky Linux 9 VM (`rhel-web01`) is provisioned specifically for this exercise. A full VM (not LXC) is required because SELinux enforcement — a key part of Apache hardening on RHEL — is not available in LXC containers (limitation documented in LAB-01). Apache is deployed on `rhel-web01` with multiple virtual hosts, TLS termination using a self-signed CA, and a reverse proxy configuration. Server hardening covers SELinux contexts and booleans, information disclosure, security response headers, and HTTP method restrictions.
 
@@ -205,9 +215,7 @@ Each exercise has an identifier `LAB-XX` and follows this structure:
 7. Apply server hardening: suppress version disclosure, add security headers, restrict HTTP methods
 8. Test all virtual hosts, verify TLS, SELinux, and hardening
 
-**Documentation:**
-- `services/apache/README.md`
-- `services/apache/hardening-checklist.md`
+**Documentation:** `notes/lab-02-apache.md`
 
 ---
 

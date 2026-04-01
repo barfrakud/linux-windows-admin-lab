@@ -35,7 +35,8 @@ Host / VM / LXC   IP             OS                        Role
 ----------------  -------------  ------------------------  --------------------------------
 win-dc01          10.10.10.10    Windows Server 2022       AD DC, DNS, Group Policy
 win-mgmt01        10.10.10.11    Windows 11 Enterprise     Management: RSAT, PowerShell, SSH
-rhel-srv01        10.10.10.20    Rocky Linux 9 (LXC)       Apache, MySQL, Bind DNS, LDAP
+rhel-srv01        10.10.10.20    Rocky Linux 9 (LXC)       Bind DNS, MySQL, LDAP
+rhel-web01        10.10.10.21    Rocky Linux 9 (VM)        Apache, TLS, reverse proxy, SELinux
 ubuntu-ws01       10.10.10.30    Ubuntu 22.04 (LXC)        AD-joined client workstation
 ipa-srv01         10.10.10.40    Rocky Linux 9 (LXC)       FreeIPA — LDAP, Kerberos, CA, DNS
 repo-srv01        10.10.10.50    Rocky Linux 9 (LXC)       Local yum/apt mirror, ClamAV, Lynis
@@ -45,7 +46,7 @@ repo-srv01        10.10.10.50    Rocky Linux 9 (LXC)       Local yum/apt mirror,
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│  ALIENWARE M16 — bare metal                          │
+│  ALIENWARE M16 — bare metal                         │
 │  CPU: i7-13700HX  |  RAM: 16 GB  |  SSD: 1 TB       │
 ├─────────────────────────────────────────────────────┤
 │  Proxmox VE 9 — bare metal hypervisor               │
@@ -59,17 +60,24 @@ repo-srv01        10.10.10.50    Rocky Linux 9 (LXC)       Local yum/apt mirror,
 │  └──────────────────┘   └──────────────────┘        │
 │                                                     │
 │  ┌──────────────────┐   ┌──────────────────┐        │
-│  │  rhel-srv01      │   │  ubuntu-ws01     │        │
-│  │  Rocky Linux 9   │   │  Ubuntu 22.04    │        │
-│  │  Apache, MySQL   │   │  AD-joined       │        │
-│  │  Bind, LDAP      │   │  client          │        │
+│  │  rhel-srv01      │   │  rhel-web01      │        │
+│  │  Rocky Linux 9   │   │  Rocky Linux 9   │        │
+│  │  Bind DNS, MySQL │   │  Apache, TLS     │        │
+│  │  LDAP            │   │  SELinux, proxy  │        │
 │  └──────────────────┘   └──────────────────┘        │
 │                                                     │
 │  ┌──────────────────┐   ┌──────────────────┐        │
-│  │  ipa-srv01       │   │  repo-srv01      │        │
-│  │  FreeIPA         │   │  Local repo      │        │
-│  │  Kerberos, CA    │   │  ClamAV, Lynis   │        │
+│  │  ubuntu-ws01     │   │  ipa-srv01       │        │
+│  │  Ubuntu 22.04    │   │  FreeIPA         │        │
+│  │  AD-joined       │   │  Kerberos, CA    │        │
+│  │  client          │   │                  │        │
 │  └──────────────────┘   └──────────────────┘        │
+│                                                     │
+│  ┌──────────────────┐                               │
+│  │  repo-srv01      │                               │
+│  │  Local repo      │                               │
+│  │  ClamAV, Lynis   │                               │
+│  └──────────────────┘                               │
 │                                                     │
 │  vmbr10 — 10.10.10.0/24 (NAT via vmbr0)             │
 └─────────────────────────────────────────────────────┘
@@ -108,7 +116,12 @@ repo-srv01        10.10.10.50    Rocky Linux 9 (LXC)       Local yum/apt mirror,
   - [x] BIND authoritative for `linux.lab.local` + reverse zone
   - [x] Conditional forwarding to AD DNS, NS delegation on win-dc01
   - [x] All Linux resolvers updated to BIND
-- [ ] LAB-02 — Apache hardened (in progress)
+- [x] LAB-02 — Apache Web Server with hardening
+  - [x] rhel-web01 VM provisioned (Rocky Linux 9, full VM for SELinux)
+  - [x] Apache with TLS (self-signed CA), 3 virtual hosts
+  - [x] SELinux enforcing — contexts and booleans configured
+  - [x] Firewall, hardening (version suppression, security headers, TRACE blocked)
+  - [x] Cross-platform verification (Linux + Windows)
 - [ ] LAB-03 — MySQL
 - [ ] LAB-04 — OpenLDAP / 389DS
 - [ ] LAB-05 — Linux-AD integration (SSSD/realmd)
