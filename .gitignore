@@ -1,0 +1,14 @@
+# Credentials
+credentials.env
+secrets.md
+
+# AI assistant configuration
+CLAUDE.md
+.claude/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
