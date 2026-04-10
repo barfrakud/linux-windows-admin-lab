@@ -35,8 +35,8 @@ Host / VM / LXC   IP             OS                        Role
 ----------------  -------------  ------------------------  --------------------------------
 win-dc01          10.10.10.10    Windows Server 2022       AD DC, DNS, Group Policy
 win-mgmt01        10.10.10.11    Windows 11 Enterprise     Management: RSAT, PowerShell, SSH
-rhel-srv01        10.10.10.20    Rocky Linux 9 (LXC)       Bind DNS, MySQL, LDAP
-rhel-web01        10.10.10.21    Rocky Linux 9 (VM)        Apache, TLS, reverse proxy, SELinux
+rhel-srv01        10.10.10.20    Rocky Linux 9 (LXC)       Bind DNS, LDAP
+rhel-web01        10.10.10.21    Rocky Linux 9 (VM)        Apache, MySQL (LAMP), TLS, SELinux
 ubuntu-ws01       10.10.10.30    Ubuntu 22.04 (LXC)        AD-joined client workstation
 ipa-srv01         10.10.10.40    Rocky Linux 9 (LXC)       FreeIPA — LDAP, Kerberos, CA, DNS
 repo-srv01        10.10.10.50    Rocky Linux 9 (LXC)       Local yum/apt mirror, ClamAV, Lynis
@@ -62,8 +62,8 @@ repo-srv01        10.10.10.50    Rocky Linux 9 (LXC)       Local yum/apt mirror,
 │  ┌──────────────────┐   ┌──────────────────┐        │
 │  │  rhel-srv01      │   │  rhel-web01      │        │
 │  │  Rocky Linux 9   │   │  Rocky Linux 9   │        │
-│  │  Bind DNS, MySQL │   │  Apache, TLS     │        │
-│  │  LDAP            │   │  SELinux, proxy  │        │
+│  │  Bind DNS, LDAP  │   │  Apache, MySQL   │        │
+│  │                  │   │  TLS, SELinux    │        │
 │  └──────────────────┘   └──────────────────┘        │
 │                                                     │
 │  ┌──────────────────┐   ┌──────────────────┐        │
@@ -92,7 +92,8 @@ repo-srv01        10.10.10.50    Rocky Linux 9 (LXC)       Local yum/apt mirror,
 ├── notes/                  # Working lab notes per LAB-XX
 │   ├── lab-00-bootstrap.md
 │   ├── lab-01-bind.md
-│   └── lab-02-apache.md
+│   ├── lab-02-apache.md
+│   └── lab-03-mysql.md
 ├── infrastructure/
 │   ├── proxmox-setup.md    # Proxmox architecture documentation
 │   └── lab-ssh-tunnel-connect.ps1  # One-click lab access script (SSH tunnels + RDP)
@@ -122,7 +123,14 @@ repo-srv01        10.10.10.50    Rocky Linux 9 (LXC)       Local yum/apt mirror,
   - [x] SELinux enforcing — contexts and booleans configured
   - [x] Firewall, hardening (version suppression, security headers, TRACE blocked)
   - [x] Cross-platform verification (Linux + Windows)
-- [ ] LAB-03 — MySQL
+- [x] LAB-03 — MySQL Server Administration
+  - [x] MySQL 8.0.45 installed and hardened on rhel-web01 (LAMP stack)
+  - [x] Application database with role-separated users (webapp_user, backup_user)
+  - [x] Sample dataset imported, privilege separation verified
+  - [x] Server tuning: bind-address localhost, slow query log, binary logging
+  - [x] Automated backup script with 7-day rotation (cron)
+  - [x] Full restore tested (DROP → restore → verify)
+  - [x] SELinux contexts, booleans, firewall verified — zero AVC denials
 - [ ] LAB-04 — OpenLDAP / 389DS
 - [ ] LAB-05 — Linux-AD integration (SSSD/realmd)
 - [ ] LAB-06 — FreeIPA + AD trust

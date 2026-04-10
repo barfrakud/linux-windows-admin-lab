@@ -221,15 +221,15 @@ Each exercise has an identifier `LAB-XX` and follows this structure:
 
 #### LAB-03: MySQL Server Administration
 
-**Scenario:** MySQL is installed on `rhel-srv01` and configured for a production-like workload. Separate database accounts are created per function (application user, backup user), server parameters are tuned for observability, and an automated backup script with rotation is implemented. The restore procedure is verified. SELinux contexts and network access restrictions complete the setup.
+**Scenario:** MySQL is installed on `rhel-web01` (full VM with SELinux enforcing) alongside Apache, forming a LAMP stack. Separate database accounts are created per function (application user, backup user), server parameters are tuned for observability, and an automated backup script with rotation is implemented. The restore procedure is verified. SELinux contexts and network access restrictions complete the setup.
 
 **Goal:** Install and manage MySQL on RHEL — databases, users, backup, security.
 
 **Gap remedy:** G4 — MySQL administration
 
-**Machine:** rhel-srv01
+**Machine:** rhel-web01
 
-**Prerequisite state:** rhel-srv01 post-LAB-02 (Bind + Apache running). Take a Proxmox snapshot of rhel-srv01 before starting.
+**Prerequisite state:** rhel-web01 post-LAB-02 (Apache running, SELinux enforcing). Take a Proxmox snapshot of rhel-web01 before starting.
 
 **Steps:**
 1. Install MySQL and run initial security hardening
@@ -239,10 +239,6 @@ Each exercise has an identifier `LAB-XX` and follows this structure:
 5. Implement automated backup script with rotation (cron-scheduled)
 6. Test full restore from backup
 7. Configure SELinux contexts and firewall rules
-
-**Documentation:**
-- `services/mysql/README.md`
-- `services/mysql/backup-script.sh`
 
 ---
 
@@ -256,7 +252,7 @@ Each exercise has an identifier `LAB-XX` and follows this structure:
 
 **Machine:** rhel-srv01
 
-**Prerequisite state:** rhel-srv01 post-LAB-03 (Bind, Apache, MySQL running). Take a Proxmox snapshot of rhel-srv01 before starting.
+**Prerequisite state:** rhel-srv01 post-LAB-01 (Bind DNS running). Take a Proxmox snapshot of rhel-srv01 before starting.
 
 **Steps:**
 1. Install and initialise 389 Directory Server instance
@@ -288,7 +284,7 @@ Each exercise has an identifier `LAB-XX` and follows this structure:
 
 **Machines:** rhel-srv01, ubuntu-ws01, win-mgmt01
 
-**Prerequisite state:** Restore rhel-srv01 to the post-LAB-03 snapshot (before LAB-04 SSSD-LDAP changes) — SSSD must not be pre-configured. ubuntu-ws01 post-LAB-00 (fresh). Take Proxmox snapshots of rhel-srv01 and ubuntu-ws01 before starting. After this lab both machines are AD-joined — take a new snapshot of each ("post-LAB-05") before proceeding to LAB-06.
+**Prerequisite state:** Restore rhel-srv01 to the post-LAB-01 snapshot (before LAB-04 SSSD-LDAP changes) — SSSD must not be pre-configured. ubuntu-ws01 post-LAB-00 (fresh). Take Proxmox snapshots of rhel-srv01 and ubuntu-ws01 before starting. After this lab both machines are AD-joined — take a new snapshot of each ("post-LAB-05") before proceeding to LAB-06.
 
 **Steps:**
 1. Install AD integration packages on rhel-srv01 (realmd, sssd, adcli, samba-common)

@@ -91,7 +91,21 @@ Połącz RDC: WIN → `mstsc` → `localhost:23101` lub `localhost:23111`
 **Opcja 1 — ProxyJump (najprościej):**
 
 ```bash
+# rhel-srv01
 ssh -J root@10.28.0.200 root@10.10.10.20
+
+# rhel-web01
+ssh -J root@10.28.0.200 root@10.10.10.21
+
+# ubuntu-ws01
+ssh -J root@10.28.0.200 root@10.10.10.30
+
+# ipa-srv01
+ssh -J root@10.28.0.200 root@10.10.10.40
+
+# repo-srv01
+ssh -J root@10.28.0.200 root@10.10.10.50
+
 ```
 
 **Opcja 2 — Tunel portów:**
