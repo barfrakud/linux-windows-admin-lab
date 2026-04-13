@@ -244,31 +244,28 @@ Each exercise has an identifier `LAB-XX` and follows this structure:
 
 #### LAB-04: LDAP — 389 Directory Server
 
-**Scenario:** A standalone LDAP directory is deployed on `rhel-srv01` using 389 Directory Server. The directory tree is structured with standard OUs, populated with test users and groups via LDIF files, secured with TLS, and access-controlled via ACLs. SSSD is then configured to use this directory for local system authentication, completing the integration.
+**Scenario:** A standalone LDAP directory is deployed on `rhel-srv01` using 389 Directory Server. The directory tree is structured with standard OUs, populated with test users and groups via LDIF files, secured with TLS, and access-controlled via ACLs. SSSD is then configured on two separate client machines — `repo-srv01` (Rocky Linux 9) and `ubuntu-ws01` (Ubuntu 22.04) — to authenticate against the directory, validating cross-platform LDAP client integration.
 
-**Goal:** Deploy 389DS on RHEL as a central LDAP directory.
+**Goal:** Deploy 389DS on RHEL as a central LDAP directory and integrate RHEL and Ubuntu clients via SSSD.
 
 **Gap remedy:** G6 — LDAP (OpenLDAP / 389DS)
 
-**Machine:** rhel-srv01
+**Machine:** rhel-srv01 (server); repo-srv01, ubuntu-ws01 (SSSD clients)
 
-**Prerequisite state:** rhel-srv01 post-LAB-01 (Bind DNS running). Take a Proxmox snapshot of rhel-srv01 before starting.
+**Prerequisite state:** rhel-srv01 post-LAB-01 (Bind DNS running). repo-srv01 and ubuntu-ws01 post-LAB-00 (fresh). Take Proxmox snapshots of all three machines before starting.
 
 **Steps:**
-1. Install and initialise 389 Directory Server instance
+1. Install and initialise 389 Directory Server instance on rhel-srv01
 2. Build DIT structure: base DN, OUs for People, Groups, Services
 3. Populate users and groups using LDIF files
 4. Enable TLS with a self-signed certificate
 5. Define ACL policies for different bind DNs
-6. Configure SSSD on rhel-srv01 to authenticate against LDAP
-7. Verify system login with LDAP users and TLS connectivity
+6. Configure SSSD on repo-srv01 (RHEL client) to authenticate against LDAP
+7. Configure SSSD on ubuntu-ws01 (Ubuntu client) to authenticate against LDAP
+8. Verify system login with LDAP users and TLS connectivity on both clients
+9. Install Cockpit with cockpit-389-ds plugin on rhel-srv01; explore DIT and configuration via web UI
 
-**Documentation:**
-- `services/ldap/README.md`
-- `services/ldap/schema/`
-- `services/ldap/sssd-integration.md`
-
-**Conflict note:** Configuring SSSD for 389DS authentication in this lab will conflict with LAB-05 (SSSD for AD). Before starting LAB-05, restore rhel-srv01 to the post-LAB-03 snapshot (pre-LAB-04 state) to ensure a clean SSSD configuration.
+**Conflict note:** SSSD configuration on ubuntu-ws01 will conflict with LAB-05 (SSSD for AD). Before starting LAB-05, restore ubuntu-ws01 to its pre-LAB-04 snapshot. Restore rhel-srv01 to its post-LAB-01 snapshot (pre-LAB-04 state) to remove 389DS. repo-srv01 SSSD-LDAP configuration does not conflict with later labs (LAB-07/08) and can remain.
 
 ---
 
