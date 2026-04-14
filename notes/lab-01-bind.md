@@ -1342,6 +1342,8 @@ Jedyne ograniczenie: SELinux nie działa w LXC — w produkcji na pełnej VM by�
 - **Ubuntu LXC (Proxmox)** → ręczna edycja `/etc/resolv.conf` (Proxmox zarządza plikiem bezpośrednio — markery `# --- BEGIN PVE ---`, systemd-resolved raportuje `resolv.conf mode: foreign`)
 - Proxmox może nadpisać `/etc/resolv.conf` przy restarcie kontenera — trwała zmiana przez `pct set <CTID> --nameserver ... --searchdomain ...`
 
+**Post-LAB-04 discovery:** Po restarcie kontenera LXC (lub przywróceniu snapshota) resolver na rhel-srv01 cofnął się do `10.10.10.10` (Windows DC) zamiast `10.10.10.20` (BIND). Przyczyna: `nmcli con mod` zmienia konfigurację profilu NetworkManager, ale Proxmox może nadpisać `/etc/resolv.conf` przy starcie LXC. Trwała naprawa wymaga ustawienia resolvera na poziomie Proxmox: `pct set <CTID> --nameserver 10.10.10.20 --searchdomain "linux.lab.local lab.local"` — to zabezpiecza konfigurację przed nadpisaniem przy restarcie kontenera.
+
 ---
 #### Problem solved - Jakie problemy zostały rozwiązane?
 - **SERVFAIL przy AD forwarding** (krok 4.3) — BIND z domyślnym `dnssec-validation auto` odrzucał niepodpisane odpowiedzi AD DNS ("broken trust chain"). Rozwiązanie: `dnssec-validation no;` w `named.conf`
