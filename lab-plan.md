@@ -265,6 +265,12 @@ Each exercise has an identifier `LAB-XX` and follows this structure:
 8. Verify system login with LDAP users and TLS connectivity on both clients
 9. Install Cockpit with cockpit-389-ds plugin on rhel-srv01; explore DIT and configuration via web UI
 
+**Documentation:**
+- `notes/lab-04-ldap.md`
+- `services/ldap/scripts/bash/` — Bash scripts for LDAP user management (create, expiry check, list locked, lock/unlock)
+- `services/ldap/scripts/ansible/` — Equivalent Ansible playbooks using community.general.ldap_entry/ldap_attrs
+- `services/ldap/scripts/README.md`
+
 **Conflict note:** SSSD configuration on ubuntu-ws01 will conflict with LAB-05 (SSSD for AD). Before starting LAB-05, restore ubuntu-ws01 to its pre-LAB-04 snapshot. Restore rhel-srv01 to its post-LAB-01 snapshot (pre-LAB-04 state) to remove 389DS. repo-srv01 SSSD-LDAP configuration does not conflict with later labs (LAB-07/08) and can remain.
 
 ---
@@ -397,7 +403,7 @@ Each exercise has an identifier `LAB-XX` and follows this structure:
 
 ---
 
-#### LAB-09: Security Hardening per CIS Benchmark
+#### LAB-09: Security Hardening per CIS Benchmark - !!!!!!!!Tego nie będę robił bo mam już zrobione w innym projekcie!!!!!!!
 
 **Scenario:** RHEL 9 and Ubuntu 22.04 are hardened according to CIS Level 1 Server profiles. Controls are applied systematically across filesystem configuration, kernel network parameters, logging, access control, SSH, SELinux, and firewall policy. Ansible roles automate the process. Lynis and optionally OpenSCAP scores are recorded before and after to demonstrate measurable improvement. A mapping table links CIS controls to NIST SP 800-53 and ISO 27001.
 
@@ -532,6 +538,7 @@ win-linux-admin-lab/
 │   ├── apache/
 │   ├── mysql/
 │   ├── ldap/
+│   │   └── scripts/                  # Bash + Ansible user management
 │   └── repos/
 ├── ad-integration/
 │   ├── README.md
@@ -575,7 +582,7 @@ win-linux-admin-lab/
 | Security standards | LAB-09 | `security/hardening/` |
 | Release management | LAB-12 | `docs/release-management/` |
 | Git | Entire project | GitHub repository |
-| Bash scripting | LAB-01–08 | Scripts in every directory |
+| Bash scripting | LAB-01–08 | Scripts in every directory, `services/ldap/scripts/` |
 | Documentation | Entire project | `docs/`, README in every directory |
 
 ### Prepared interview answers:

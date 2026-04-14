@@ -1,0 +1,40 @@
+# =============================================================================
+# users.csv — Template for bulk LDAP user creation
+# =============================================================================
+#
+# FORMAT: uid,first_name,last_name,uid_number,gid_number,login_shell,password
+#
+# RULES:
+#   - Lines starting with # are comments (ignored)
+#   - Empty lines are ignored
+#   - Fields are comma-separated (no spaces around commas)
+#   - uid_number must be unique per user
+#   - gid_number must reference an existing POSIX group
+#   - password field is optional — if empty, no password is set
+#   - login_shell is optional — defaults to /bin/bash if empty
+#
+# GROUPS IN THIS LAB:
+#   10001 = linuxadmins
+#   10002 = linuxusers
+#
+# EXISTING USERS (do not duplicate):
+#   jkowalski  = 20001
+#   anowak     = 20002
+# =============================================================================
+#
+# uid,first_name,last_name,uid_number,gid_number,login_shell,password
+mzielinski,Mateusz,Zieliński,20003,10001,/bin/bash,Mzielinski123!
+jwisniewski,Jakub,Wiśniewski,20004,10002,/bin/bash,Jwisniewski123!
+kwojcik,Krzysztof,Wójcik,20005,10001,/bin/bash,Kwojcik123!
+anowak,Adam,Nowak,20006,10002,/bin/bash,Anowak123!
+pkowalski,Piotr,Kowalski,20007,10001,/bin/bash,Pkowalski123!
+mlewandowska,Magdalena,Lewandowska,20008,10002,/bin/bash,Mlewandowska123!
+tkowalczyk,Tomasz,Kowalczyk,20009,10001,/bin/bash,Tkowalczyk123!
+awisniewska,Agnieszka,Wiśniewska,20010,10002,/bin/bash,Awisniewska123!
+kwojcik2,Kamil,Wójcik,20011,10002,/bin/bash,Kwojcik2_123!
+kszymanski,Szymon,Szymański,20012,10001,/bin/bash,Kszymanski123!
+jnowak,Joanna,Nowak,20013,10002,/bin/bash,Jnowak123!
+dmichalski,Dawid,Michalski,20014,10001,/bin/bash,Dmichalski123!
+kwozniak,Karolina,Woźniak,20015,10002,/bin/bash,Kwozniak123!
+pzielinski,Patryk,Zieliński,20016,10002,/bin/bash,Pzielinski123!
+anowicka,Aleksandra,Nowicka,20017,10001,/bin/zsh,Anowicka123!

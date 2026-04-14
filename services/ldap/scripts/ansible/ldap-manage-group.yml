@@ -1,0 +1,282 @@
+---
+# =============================================================================
+# ldap-manage-group.yml — Ansible playbook to manage LDAP group membership
+# =============================================================================
+#
+# DESCRIPTION:
+#   Manages POSIX group membership in 389 Directory Server.
+#   Supports adding/removing users and listing group members.
+#
+# USAGE:
+#   # Add user to group:
+#   ansible-playbook ldap-manage-group.yml \
+#     -e "group=linuxadmins uid=jkowalski action=add"
+#
+#   # Remove user from group:
+#   ansible-playbook ldap-manage-group.yml \
+#     -e "group=linuxadmins uid=jkowalski action=remove"
+#
+#   # List group members:
+#   ansible-playbook ldap-manage-group.yml \
+#     -e "group=linuxadmins action=list"
+#
+#   # List user's groups:
+#   ansible-playbook ldap-manage-group.yml \
+#     -e "uid=jkowalski action=user-groups"
+#
+# ANSIBLE CONCEPTS EXPLAINED:
+#   - ldap_attrs with state=present: adds a value to a multi-valued attribute
+#     WITHOUT removing existing values. Perfect for adding memberUid.
+#   - ldap_attrs with state=absent: removes a specific value from a
+#     multi-valued attribute. Other values remain.
+#   - These operations are IDEMPOTENT:
+#     - Adding a user who's already a member → no change
+#     - Removing a user who's not a member → no error
+# =============================================================================
+
+- name: Manage LDAP group membership
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    ldap_uri: "ldaps://rhel-srv01.linux.lab.local:636"
+    base_dn: "dc=linux,dc=lab,dc=local"
+    people_ou: "ou=People,{{ base_dn }}"
+    groups_ou: "ou=Groups,{{ base_dn }}"
+    bind_dn: "cn=Directory Manager"
+    bind_password: "{{ lookup('env', 'LDAP_BIND_PASSWORD') | default(omit) }}"
+
+  tasks:
+    # =========================================================================
+    # VALIDATION
+    # =========================================================================
+
+    - name: Validate action
+      ansible.builtin.assert:
+        that:
+          - action is defined and action in ['add', 'remove', 'list', 'user-groups']
+        fail_msg: "action must be one of: add, remove, list, user-groups"
+
+    - name: Validate group name for group operations
+      ansible.builtin.assert:
+        that:
+          - group is defined and group | length > 0
+        fail_msg: "Missing -e 'group=<groupname>'"
+      when: action in ['add', 'remove', 'list']
+
+    - name: Validate uid for user operations
+      ansible.builtin.assert:
+        that:
+          - uid is defined and uid | length > 0
+        fail_msg: "Missing -e 'uid=<username>'"
+      when: action in ['add', 'remove', 'user-groups']
+
+    # =========================================================================
+    # FIND GROUP
+    # =========================================================================
+
+    - name: Search for group
+      community.general.ldap_search:
+        server_uri: "{{ ldap_uri }}"
+        bind_dn: "{{ bind_dn }}"
+        bind_pw: "{{ bind_password }}"
+        validate_certs: true
+        dn: "{{ groups_ou }}"
+        scope: "onelevel"
+        filter: "(cn={{ group }})"
+        attrs:
+          - cn
+          - gidNumber
+          - memberUid
+      register: group_search
+      when: action in ['add', 'remove', 'list']
+      no_log: true
+
+    - name: Verify group exists
+      ansible.builtin.assert:
+        that:
+          - group_search.results | length > 0
+        fail_msg: "Group '{{ group }}' not found in {{ groups_ou }}"
+      when: action in ['add', 'remove', 'list']
+
+    # =========================================================================
+    # ADD USER TO GROUP
+    # =========================================================================
+    # state=present adds the memberUid value if not already present.
+    # If the user is already a member, the task reports "ok" (no change).
+
+    - name: Add user to group
+      community.general.ldap_attrs:
+        server_uri: "{{ ldap_uri }}"
+        bind_dn: "{{ bind_dn }}"
+        bind_pw: "{{ bind_password }}"
+        validate_certs: true
+        dn: "{{ group_search.results[0].dn }}"
+        attributes:
+          memberUid: "{{ uid }}"
+        state: present
+      when: action == "add"
+      register: add_result
+
+    - name: Report add result
+      ansible.builtin.debug:
+        msg: >-
+          {{ '✅ Added ' + uid + ' to ' + group
+             if add_result.changed | default(false)
+             else '⚠️  ' + uid + ' is already a member of ' + group + ' (no change)' }}
+      when: action == "add"
+
+    # =========================================================================
+    # REMOVE USER FROM GROUP
+    # =========================================================================
+
+    - name: Remove user from group
+      community.general.ldap_attrs:
+        server_uri: "{{ ldap_uri }}"
+        bind_dn: "{{ bind_dn }}"
+        bind_pw: "{{ bind_password }}"
+        validate_certs: true
+        dn: "{{ group_search.results[0].dn }}"
+        attributes:
+          memberUid: "{{ uid }}"
+        state: absent
+      when: action == "remove"
+      register: remove_result
+
+    - name: Report remove result
+      ansible.builtin.debug:
+        msg: >-
+          {{ '✅ Removed ' + uid + ' from ' + group
+             if remove_result.changed | default(false)
+             else '⚠️  ' + uid + ' was not a member of ' + group + ' (no change)' }}
+      when: action == "remove"
+
+    # =========================================================================
+    # LIST GROUP MEMBERS
+    # =========================================================================
+
+    - name: Find primary group members
+      community.general.ldap_search:
+        server_uri: "{{ ldap_uri }}"
+        bind_dn: "{{ bind_dn }}"
+        bind_pw: "{{ bind_password }}"
+        validate_certs: true
+        dn: "{{ base_dn }}"
+        scope: "subtree"
+        filter: "(&(objectClass=posixAccount)(gidNumber={{ [group_search.results[0].gidNumber] | flatten | first }}))"
+        attrs:
+          - uid
+      register: primary_members
+      when: action == "list"
+      no_log: true
+
+    - name: Build group members report
+      ansible.builtin.set_fact:
+        group_report: >-
+          {{
+            ['━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+             'Group: ' + group + ' (gid=' + ([group_search.results[0].gidNumber] | flatten | first | string) + ')',
+             'DN:    ' + group_search.results[0].dn,
+             '',
+             'Supplementary members (memberUid):']
+            + (group_search.results[0].memberUid
+               if group_search.results[0].memberUid is iterable and group_search.results[0].memberUid is not string
+               else ([group_search.results[0].memberUid] if group_search.results[0].memberUid is defined else []))
+              | map('regex_replace', '^(.*)$', '  - \1') | list
+            + (['  (none)'] if group_search.results[0].memberUid is not defined else [])
+            + ['',
+               'Primary group members (gidNumber=' + ([group_search.results[0].gidNumber] | flatten | first | string) + '):']
+            + (primary_members.results | default([])
+               | map(attribute='uid') | flatten | map('regex_replace', '^(.*)$', '  - \1') | list)
+            + (['  (none)'] if primary_members.results | default([]) | length == 0 else [])
+            + ['━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━']
+          }}
+      when: action == "list"
+      no_log: true
+
+    - name: Display group members
+      ansible.builtin.debug:
+        msg: "{{ group_report }}"
+      when: action == "list"
+
+    # =========================================================================
+    # LIST USER'S GROUPS
+    # =========================================================================
+
+    - name: Get user's primary group
+      community.general.ldap_search:
+        server_uri: "{{ ldap_uri }}"
+        bind_dn: "{{ bind_dn }}"
+        bind_pw: "{{ bind_password }}"
+        validate_certs: true
+        dn: "{{ base_dn }}"
+        scope: "subtree"
+        filter: "(uid={{ uid }})"
+        attrs:
+          - uid
+          - gidNumber
+      register: user_info
+      when: action == "user-groups"
+      no_log: true
+
+    - name: Find user's primary group name
+      community.general.ldap_search:
+        server_uri: "{{ ldap_uri }}"
+        bind_dn: "{{ bind_dn }}"
+        bind_pw: "{{ bind_password }}"
+        validate_certs: true
+        dn: "{{ groups_ou }}"
+        scope: "onelevel"
+        filter: "(gidNumber={{ [user_info.results[0].gidNumber] | flatten | first }})"
+        attrs:
+          - cn
+      register: primary_group
+      when: action == "user-groups"
+      no_log: true
+
+    - name: Find user's supplementary groups
+      community.general.ldap_search:
+        server_uri: "{{ ldap_uri }}"
+        bind_dn: "{{ bind_dn }}"
+        bind_pw: "{{ bind_password }}"
+        validate_certs: true
+        dn: "{{ groups_ou }}"
+        scope: "onelevel"
+        filter: "(memberUid={{ uid }})"
+        attrs:
+          - cn
+          - gidNumber
+      register: supplementary_groups
+      when: action == "user-groups"
+      no_log: true
+
+    - name: Display user's groups
+      ansible.builtin.debug:
+        msg: >-
+          {{
+            ['━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+             'User: ' + uid,
+             '',
+             'Primary group:',
+             '  - ' + ([primary_group.results[0].cn] | flatten | first | default('unknown'))
+                    + ' (gid=' + ([user_info.results[0].gidNumber] | flatten | first | string) + ')',
+             '',
+             'Supplementary groups:']
+            + (supplementary_groups.results | default([])
+               | map(attribute='cn') | flatten
+               | zip(supplementary_groups.results | default([]) | map(attribute='gidNumber') | flatten)
+               | map('join', '|') | map('regex_replace', '^(.+)\|(.+)$', '  - \1 (gid=\2)') | list)
+            + (['  (none)'] if supplementary_groups.results | default([]) | length == 0 else [])
+            + ['━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━']
+          }}
+      when: action == "user-groups"
+
+    # =========================================================================
+    # SSSD CACHE REMINDER
+    # =========================================================================
+
+    - name: SSSD cache reminder
+      ansible.builtin.debug:
+        msg: "TIP: Clear SSSD cache on clients: sss_cache -E && systemctl restart sssd"
+      when: action in ['add', 'remove']

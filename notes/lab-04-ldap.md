@@ -1962,3 +1962,50 @@ Poniższa tabela podsumowuje, jakie pakiety należy zainstalować na każdej mas
 | Aktualizacja CA trust | `update-ca-trust` | `update-ca-certificates` |
 | Auto-tworzenie $HOME | `oddjob-mkhomedir` (osobny pakiet) | wbudowane w `pam_mkhomedir.so` |
 | Pakiet narzędzi LDAP | `openldap-clients` | `ldap-utils` |
+
+---
+
+## Skrypty zarządzania kontami
+
+Po zakończeniu konfiguracji serwera i klientów stworzyłem zestaw skryptów do zarządzania kontami LDAP w katalogu `services/ldap/scripts/`. Każda operacja ma dwa warianty: skrypt bash (do szybkich operacji z CLI) i playbook Ansible (do powtarzalnych, audytowalnych procesów).
+
+Operacje objęte skryptami:
+
+```
+ldap-list-users     — wylistowanie kont (tabela / verbose / filtr po grupie)
+ldap-create-user    — tworzenie pojedynczego konta POSIX
+ldap-delete-user    — usuwanie konta (z opcjonalnym czyszczeniem memberUid w grupach)
+ldap-reset-password — reset hasła (ręczne lub losowo generowane)
+ldap-lock-user      — blokowanie / odblokowywanie konta (nsAccountLock)
+ldap-check-expiry   — raport wygasania haseł i kont
+ldap-list-locked    — lista zablokowanych kont i nieudanych prób logowania
+ldap-manage-group   — zarządzanie przynależnością do grup (add / remove / list)
+ldap-bulk-create    — masowe tworzenie kont z pliku CSV
+```
+
+Wymagania dla playbooków Ansible — na rhel-srv01:
+
+```bash
+dnf install -y ansible
+pip3 install python-ldap
+ansible-galaxy collection install community.general
+export LDAP_BIND_PASSWORD='haslo-Directory-Manager'
+```
+
+Weryfikacja — sprawdzam, że skrypty działają poprawnie:
+
+```bash
+# bash
+cd services/ldap/scripts/bash
+./ldap-list-users.sh
+./ldap-bulk-create.sh -f ../templates/users.csv --dry-run
+
+# Ansible
+cd services/ldap/scripts/ansible
+ansible-playbook ldap-list-users.yml
+ansible-playbook ldap-bulk-create.yml -e "csv_file=../templates/users.csv" --check
+```
+
+Uwaga: uid (login) musi zawierać wyłącznie znaki ASCII. Atrybut `homeDirectory` w 389DS używa składni IA5String — polskie znaki w loginie (np. `kwójcik`) powodują błąd `Invalid syntax` przy tworzeniu konta. Imiona i nazwiska (cn, sn) mogą zawierać UTF-8.
+
+✅ Skrypty przetestowane na rhel-srv01 z 389DS 2.7.0.

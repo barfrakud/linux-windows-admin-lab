@@ -1,0 +1,183 @@
+---
+# =============================================================================
+# ldap-delete-user.yml — Ansible playbook to delete an LDAP user from 389DS
+# =============================================================================
+#
+# DESCRIPTION:
+#   Removes a user entry from the LDAP directory. Optionally cleans up
+#   group memberships (memberUid references). This is a destructive operation.
+#
+#   IMPORTANT: In production, locking is preferred over deletion.
+#   Use ldap-lock-user.yml -e "action=lock" instead when possible.
+#
+# USAGE:
+#   ansible-playbook ldap-delete-user.yml -e "uid=mwisniewska"
+#   ansible-playbook ldap-delete-user.yml -e "uid=mwisniewska remove_from_groups=true"
+#
+# ANSIBLE CONCEPTS EXPLAINED:
+#   - ldap_entry with state=absent: removes the LDAP entry. Idempotent —
+#     if the entry doesn't exist, it reports "ok" (no error).
+#   - ldap_attrs with state=absent: removes specific attribute values.
+#     Used here to remove memberUid references from groups.
+#   - Confirmation pattern: Ansible doesn't have interactive prompts.
+#     In production, use --check (dry run) mode first, then run for real.
+#     Or use a confirmation variable: -e "confirm=yes"
+# =============================================================================
+
+- name: Delete LDAP user from 389 Directory Server
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    ldap_uri: "ldaps://rhel-srv01.linux.lab.local:636"
+    base_dn: "dc=linux,dc=lab,dc=local"
+    people_ou: "ou=People,{{ base_dn }}"
+    groups_ou: "ou=Groups,{{ base_dn }}"
+    bind_dn: "cn=Directory Manager"
+    bind_password: "{{ lookup('env', 'LDAP_BIND_PASSWORD') | default(omit) }}"
+    remove_from_groups: false
+    # Safety: require explicit confirmation
+    # confirm: "yes"
+
+  tasks:
+    # =========================================================================
+    # VALIDATION
+    # =========================================================================
+
+    - name: Validate required variables
+      ansible.builtin.assert:
+        that:
+          - uid is defined and uid | length > 0
+        fail_msg: "Missing uid. Usage: ansible-playbook ldap-delete-user.yml -e 'uid=<username>'"
+
+    - name: Require explicit confirmation
+      ansible.builtin.assert:
+        that:
+          - confirm is defined and confirm == "yes"
+        fail_msg: >-
+          Deletion requires explicit confirmation.
+          Add -e "confirm=yes" to proceed.
+          Or use --check for a dry run first.
+          Consider locking instead: ansible-playbook ldap-lock-user.yml -e "uid={{ uid }} action=lock"
+
+    # =========================================================================
+    # VERIFY USER EXISTS
+    # =========================================================================
+
+    - name: Search for user in People OU
+      community.general.ldap_search:
+        server_uri: "{{ ldap_uri }}"
+        bind_dn: "{{ bind_dn }}"
+        bind_pw: "{{ bind_password }}"
+        validate_certs: true
+        dn: "{{ people_ou }}"
+        scope: "onelevel"
+        filter: "(uid={{ uid }})"
+        attrs:
+          - uid
+          - cn
+          - uidNumber
+          - gidNumber
+      register: user_search
+      no_log: true
+
+    - name: Verify user exists
+      ansible.builtin.assert:
+        that:
+          - user_search.results | length > 0
+        fail_msg: "User '{{ uid }}' not found in {{ people_ou }}"
+
+    - name: Display user to be deleted
+      ansible.builtin.debug:
+        msg:
+          - "⚠️  DELETING user: {{ [user_search.results[0].uid] | flatten | first }} ({{ [user_search.results[0].cn] | flatten | first | default('N/A') }})"
+          - "   DN: {{ user_search.results[0].dn }}"
+          - "   uidNumber: {{ [user_search.results[0].uidNumber] | flatten | first }}"
+
+    # =========================================================================
+    # CLEAN UP GROUP MEMBERSHIPS (optional)
+    # =========================================================================
+    # In rfc2307 schema, memberUid is stored on the GROUP, not the user.
+    # Deleting the user does NOT automatically remove memberUid references.
+
+    - name: Find groups containing this user
+      community.general.ldap_search:
+        server_uri: "{{ ldap_uri }}"
+        bind_dn: "{{ bind_dn }}"
+        bind_pw: "{{ bind_password }}"
+        validate_certs: true
+        dn: "{{ groups_ou }}"
+        scope: "onelevel"
+        filter: "(memberUid={{ uid }})"
+        attrs:
+          - cn
+          - memberUid
+      register: group_memberships
+      no_log: true
+
+    - name: Report group memberships
+      ansible.builtin.debug:
+        msg: "User is member of {{ group_memberships.results | length }} group(s): {{ group_memberships.results | map(attribute='cn') | flatten | list | join(', ') }}"
+      when: group_memberships.results | length > 0
+
+    - name: Remove memberUid from groups
+      community.general.ldap_attrs:
+        server_uri: "{{ ldap_uri }}"
+        bind_dn: "{{ bind_dn }}"
+        bind_pw: "{{ bind_password }}"
+        validate_certs: true
+        dn: "{{ item.dn }}"
+        attributes:
+          memberUid: "{{ uid }}"
+        state: absent
+      loop: "{{ group_memberships.results }}"
+      loop_control:
+        label: "{{ [item.cn] | flatten | first | default(item.dn) }}"
+      when:
+        - remove_from_groups | bool
+        - group_memberships.results | length > 0
+      register: group_cleanup
+
+    - name: Warn about orphaned memberUid
+      ansible.builtin.debug:
+        msg:
+          - "⚠️  WARNING: User has group memberships that were NOT cleaned up."
+          - "   Add -e 'remove_from_groups=true' to remove memberUid references."
+          - "   Orphaned memberUid entries won't break anything but are messy."
+      when:
+        - not (remove_from_groups | bool)
+        - group_memberships.results | length > 0
+
+    # =========================================================================
+    # DELETE THE USER
+    # =========================================================================
+
+    - name: Delete user entry from LDAP
+      community.general.ldap_entry:
+        server_uri: "{{ ldap_uri }}"
+        bind_dn: "{{ bind_dn }}"
+        bind_pw: "{{ bind_password }}"
+        validate_certs: true
+        dn: "uid={{ uid }},{{ people_ou }}"
+        state: absent
+      register: delete_result
+
+    - name: Report deletion result
+      ansible.builtin.debug:
+        msg: >-
+          {{ '🗑️  User DELETED successfully' if delete_result.changed
+             else 'User was already absent (no change)' }}
+
+    # =========================================================================
+    # POST-DELETION REMINDERS
+    # =========================================================================
+
+    - name: Post-deletion checklist
+      ansible.builtin.debug:
+        msg:
+          - "Post-deletion checklist:"
+          - "  1. Clear SSSD cache: sss_cache -E && systemctl restart sssd"
+          - "  2. Remove home directory: rm -rf /home/{{ uid }}"
+          - "  3. Check for cron jobs or file ownership by former uid"
+          - "  4. Update documentation and access lists"

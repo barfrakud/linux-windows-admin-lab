@@ -1,0 +1,274 @@
+---
+# =============================================================================
+# ldap-bulk-create.yml — Ansible playbook for bulk LDAP user creation from CSV
+# =============================================================================
+#
+# DESCRIPTION:
+#   Reads a CSV file and creates multiple LDAP users in one playbook run.
+#   Each user is created independently — one failure doesn't stop the rest.
+#   Produces a summary report at the end.
+#
+# USAGE:
+#   # Create users from CSV:
+#   ansible-playbook ldap-bulk-create.yml -e "csv_file=../templates/users.csv"
+#
+#   # Dry run (check mode — Ansible built-in):
+#   ansible-playbook ldap-bulk-create.yml -e "csv_file=../templates/users.csv" --check
+#
+#   # Skip existing users:
+#   ansible-playbook ldap-bulk-create.yml -e "csv_file=../templates/users.csv skip_existing=true"
+#
+# CSV FORMAT:
+#   uid,first_name,last_name,uid_number,gid_number,login_shell,password
+#   See templates/users.csv for a complete example.
+#
+# REQUIREMENTS:
+#   - Ansible 2.9+
+#   - Collection: community.general
+#   - Python package: python-ldap
+#
+# ANSIBLE CONCEPTS EXPLAINED:
+#   - read_csv module: reads a CSV file and returns a list of dicts.
+#     Each row becomes a dict with column names as keys. This is Ansible's
+#     built-in way to handle CSV files — no shell parsing needed.
+#
+#   - loop: iterates over a list. Here we loop over all rows from the CSV.
+#     loop_control.label controls what's shown in output (just the uid,
+#     not the entire dict with password).
+#
+#   - ignore_errors + register: lets us continue even if one user fails.
+#     The results are collected and analyzed in the summary.
+#
+#   - --check mode: Ansible's built-in dry run. Modules report what WOULD
+#     change without making changes. ldap_entry supports check mode natively.
+#
+#   - csvfile lookup vs read_csv module:
+#     - lookup('csvfile', ...) reads a single value from a CSV — good for
+#       key-value lookups.
+#     - read_csv module reads the entire file into a list — better for
+#       iterating over all rows (our use case).
+# =============================================================================
+
+- name: Bulk create LDAP users from CSV
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    ldap_uri: "ldaps://rhel-srv01.linux.lab.local:636"
+    base_dn: "dc=linux,dc=lab,dc=local"
+    people_ou: "ou=People,{{ base_dn }}"
+    bind_dn: "cn=Directory Manager"
+    bind_password: "{{ lookup('env', 'LDAP_BIND_PASSWORD') | default(omit) }}"
+    default_gid: "10002"
+    default_shell: "/bin/bash"
+    skip_existing: false
+    # csv_file: "../templates/users.csv"  # pass via -e
+
+  tasks:
+    # =========================================================================
+    # VALIDATION
+    # =========================================================================
+
+    - name: Validate CSV file is specified
+      ansible.builtin.assert:
+        that:
+          - csv_file is defined and csv_file | length > 0
+        fail_msg: >-
+          Missing csv_file. Usage:
+          ansible-playbook ldap-bulk-create.yml -e "csv_file=path/to/users.csv"
+
+    # =========================================================================
+    # READ CSV FILE
+    # =========================================================================
+    # read_csv parses the CSV into a list of dicts.
+    # The first non-comment line defines column names (if fieldnames not set).
+    # We explicitly set fieldnames to match our CSV format.
+    #
+    # Note: read_csv doesn't skip comment lines (starting with #).
+    # We handle that in the loop with a "when" condition.
+
+    - name: Read users from CSV file
+      community.general.read_csv:
+        path: "{{ csv_file }}"
+        fieldnames:
+          - uid
+          - first_name
+          - last_name
+          - uid_number
+          - gid_number
+          - login_shell
+          - password
+        # delimiter defaults to ","
+      register: csv_data
+      no_log: true
+
+    # Filter out comment lines and empty rows
+    # Lines starting with # have uid starting with #
+    - name: Filter valid rows from CSV
+      ansible.builtin.set_fact:
+        valid_users: >-
+          {{ csv_data.list
+             | rejectattr('uid', 'match', '^\s*#')
+             | rejectattr('uid', 'match', '^\s*$')
+             | list }}
+
+    - name: Display planned operations
+      ansible.builtin.debug:
+        msg:
+          - "CSV file: {{ csv_file }}"
+          - "Total valid rows: {{ valid_users | length }}"
+          - "Mode: {{ 'CHECK (dry run)' if ansible_check_mode else 'CREATE' }}"
+          - "Skip existing: {{ skip_existing }}"
+
+    # =========================================================================
+    # CHECK FOR EXISTING USERS
+    # =========================================================================
+    # Query LDAP once for all existing users — more efficient than checking
+    # one by one inside the loop.
+
+    - name: Get all existing users from LDAP
+      community.general.ldap_search:
+        server_uri: "{{ ldap_uri }}"
+        bind_dn: "{{ bind_dn }}"
+        bind_pw: "{{ bind_password }}"
+        validate_certs: true
+        dn: "{{ people_ou }}"
+        scope: "onelevel"
+        filter: "(objectClass=posixAccount)"
+        attrs:
+          - uid
+          - uidNumber
+      register: existing_users
+      no_log: true
+
+    - name: Build lookup sets for existing data
+      # flatten handles both old Ansible 2.14 (ldap_search returns strings)
+      # and newer versions (returns lists). map('first') breaks on strings.
+      ansible.builtin.set_fact:
+        existing_uids: "{{ existing_users.results | map(attribute='uid') | flatten | list }}"
+        existing_uidnums: "{{ existing_users.results | map(attribute='uidNumber') | flatten | list }}"
+      no_log: true
+
+    # =========================================================================
+    # CREATE USERS
+    # =========================================================================
+    # Loop over each row from the CSV. Each iteration creates one user.
+    # ignore_errors ensures one failure doesn't stop the batch.
+    #
+    # The "when" condition skips users that already exist (if skip_existing).
+
+    - name: Create LDAP user entries
+      community.general.ldap_entry:
+        server_uri: "{{ ldap_uri }}"
+        bind_dn: "{{ bind_dn }}"
+        bind_pw: "{{ bind_password }}"
+        validate_certs: true
+        dn: "uid={{ item.uid }},{{ people_ou }}"
+        state: present
+        objectClass:
+          - inetOrgPerson
+          - posixAccount
+          - organizationalPerson
+        attributes:
+          uid: "{{ item.uid }}"
+          cn: "{{ item.first_name }} {{ item.last_name }}"
+          sn: "{{ item.last_name }}"
+          givenName: "{{ item.first_name }}"
+          displayName: "{{ item.first_name }} {{ item.last_name }}"
+          uidNumber: "{{ item.uid_number }}"
+          gidNumber: "{{ item.gid_number | default(default_gid, true) }}"
+          homeDirectory: "/home/{{ item.uid }}"
+          loginShell: "{{ item.login_shell | default(default_shell, true) }}"
+      loop: "{{ valid_users }}"
+      loop_control:
+        label: "{{ item.uid }} (uid={{ item.uid_number }})"
+      when: >-
+        not (skip_existing | bool and item.uid in existing_uids)
+      register: create_results
+      ignore_errors: true
+
+    # =========================================================================
+    # SET PASSWORDS
+    # =========================================================================
+    # Set passwords for successfully created users that have a password field.
+
+    - name: Set user passwords
+      community.general.ldap_attrs:
+        server_uri: "{{ ldap_uri }}"
+        bind_dn: "{{ bind_dn }}"
+        bind_pw: "{{ bind_password }}"
+        validate_certs: true
+        dn: "uid={{ item.item.uid }},{{ people_ou }}"
+        attributes:
+          userPassword: "{{ item.item.password }}"
+        state: exact
+      loop: "{{ create_results.results | default([]) }}"
+      loop_control:
+        label: "{{ item.item.uid | default('skip') }}"
+      when:
+        - item is not skipped
+        - item is not failed
+        - item.item.password is defined
+        - item.item.password | length > 0
+      no_log: true
+      ignore_errors: true
+      register: password_results
+
+    # =========================================================================
+    # SUMMARY REPORT
+    # =========================================================================
+
+    - name: Calculate statistics
+      ansible.builtin.set_fact:
+        stats_created: >-
+          {{ create_results.results | default([])
+             | selectattr('changed', 'defined')
+             | selectattr('changed', 'equalto', true)
+             | list | length }}
+        stats_skipped: >-
+          {{ create_results.results | default([])
+             | selectattr('skipped', 'defined')
+             | selectattr('skipped', 'equalto', true)
+             | list | length }}
+        stats_failed: >-
+          {{ create_results.results | default([])
+             | selectattr('failed', 'defined')
+             | selectattr('failed', 'equalto', true)
+             | list | length }}
+        stats_existing: >-
+          {{ create_results.results | default([])
+             | rejectattr('changed', 'defined')
+             | list | length }}
+
+    - name: Display summary report
+      ansible.builtin.debug:
+        msg: >-
+          {{
+            ['━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+             'BULK CREATION SUMMARY',
+             '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+             'CSV file:        ' + csv_file,
+             'Total rows:      ' + (valid_users | length | string),
+             'Created:         ' + stats_created | string,
+             'Already existed: ' + stats_existing | string,
+             'Skipped:         ' + stats_skipped | string,
+             'Failed:          ' + stats_failed | string,
+             '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━']
+            + (['⚠️  Some users failed to create. Review output above.'] if stats_failed | int > 0 else [])
+          }}
+
+    # =========================================================================
+    # POST-CREATION REMINDERS
+    # =========================================================================
+
+    - name: Post-creation reminders
+      ansible.builtin.debug:
+        msg:
+          - "Next steps:"
+          - "  1. Clear SSSD cache on clients:"
+          - "     ansible clients -m shell -a 'sss_cache -E && systemctl restart sssd'"
+          - "  2. Verify users: getent passwd <uid>"
+          - "  3. Communicate passwords to users via secure channel"
+          - "  4. Instruct users to change passwords on first login"
+      when: stats_created | int > 0

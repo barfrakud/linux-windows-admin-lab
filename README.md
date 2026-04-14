@@ -93,11 +93,13 @@ repo-srv01        10.10.10.50    Rocky Linux 9 (LXC)       Local yum/apt mirror,
 │   ├── lab-00-bootstrap.md
 │   ├── lab-01-bind.md
 │   ├── lab-02-apache.md
-│   └── lab-03-mysql.md
+│   ├── lab-03-mysql.md
+│   └── lab-04-ldap.md
 ├── infrastructure/
 │   ├── proxmox-setup.md    # Proxmox architecture documentation
 │   └── lab-ssh-tunnel-connect.ps1  # One-click lab access script (SSH tunnels + RDP)
-├── services/               # Per-service configs and test results (added per lab)
+├── services/
+│   └── ldap/scripts/       # LDAP account management scripts (bash + Ansible)
 ├── lab-plan.md             # Full project plan with all lab steps
 ├── LICENSE
 └── README.md
@@ -131,7 +133,12 @@ repo-srv01        10.10.10.50    Rocky Linux 9 (LXC)       Local yum/apt mirror,
   - [x] Automated backup script with 7-day rotation (cron)
   - [x] Full restore tested (DROP → restore → verify)
   - [x] SELinux contexts, booleans, firewall verified — zero AVC denials
-- [ ] LAB-04 — OpenLDAP / 389DS
+- [x] LAB-04 — 389 Directory Server
+  - [x] 389DS installed and configured on rhel-srv01 with TLS (LDAPS port 636)
+  - [x] DIT: ou=People, ou=Groups, ou=Services — users and groups populated via LDIF
+  - [x] ACL policies configured (Directory Manager, self-write, anonymous read restricted)
+  - [x] SSSD configured on repo-srv01 (RHEL) and ubuntu-ws01 (Ubuntu) — login verified
+  - [x] Account management scripts: bash + Ansible playbooks in `services/ldap/scripts/`
 - [ ] LAB-05 — Linux-AD integration (SSSD/realmd)
 - [ ] LAB-06 — FreeIPA + AD trust
 - [ ] LAB-07 — ClamAV + Lynis

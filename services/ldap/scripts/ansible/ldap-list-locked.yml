@@ -1,0 +1,227 @@
+---
+# =============================================================================
+# ldap-list-locked.yml — Ansible playbook to list locked LDAP accounts
+# =============================================================================
+#
+# DESCRIPTION:
+#   Queries 389 Directory Server for accounts that are currently locked
+#   (nsAccountLock=true) or have exceeded the password retry limit.
+#   Produces a summary report with actionable output.
+#
+# USAGE:
+#   ansible-playbook ldap-list-locked.yml
+#   ansible-playbook ldap-list-locked.yml -e "check_services=true"
+#
+# REQUIREMENTS:
+#   - Ansible 2.9+
+#   - Collection: community.general
+#   - Python package: python-ldap
+#
+# ANSIBLE CONCEPTS EXPLAINED:
+#   - selectattr filter: filters a list of dicts based on an attribute's value.
+#     Example: list | selectattr('key', 'equalto', 'value')
+#   - rejectattr filter: opposite of selectattr — removes matching items.
+#   - map filter: extracts a specific field from each item in a list.
+#     Example: list | map(attribute='uid') extracts all uid values.
+#   - ternary filter: inline if-else.
+#     Example: condition | ternary('yes', 'no')
+#   - block/rescue: Ansible's try/catch. Tasks in "block" run normally.
+#     If any task fails, "rescue" tasks run instead.
+# =============================================================================
+
+- name: List locked LDAP accounts
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    ldap_uri: "ldaps://rhel-srv01.linux.lab.local:636"
+    base_dn: "dc=linux,dc=lab,dc=local"
+    people_ou: "ou=People,{{ base_dn }}"
+    services_ou: "ou=Services,{{ base_dn }}"
+    bind_dn: "cn=Directory Manager"
+    bind_password: "{{ lookup('env', 'LDAP_BIND_PASSWORD') | default(omit) }}"
+    # Set to true to also check service accounts
+    check_services: false
+
+  tasks:
+    # =========================================================================
+    # SEARCH PEOPLE OU
+    # =========================================================================
+
+    - name: Search all user accounts in People OU
+      community.general.ldap_search:
+        server_uri: "{{ ldap_uri }}"
+        bind_dn: "{{ bind_dn }}"
+        bind_pw: "{{ bind_password }}"
+        validate_certs: true
+        dn: "{{ people_ou }}"
+        scope: "onelevel"
+        filter: "(objectClass=posixAccount)"
+        attrs:
+          - uid
+          - cn
+          - nsAccountLock
+          - passwordRetryCount
+          - accountUnlockTime
+      register: people_accounts
+      no_log: true
+
+    # =========================================================================
+    # OPTIONALLY SEARCH SERVICES OU
+    # =========================================================================
+    # Using block/rescue to handle the case where Services OU might be empty
+    # or the search might fail. This is a defensive pattern.
+
+    - name: Search service accounts (optional)
+      block:
+        - name: Search all service accounts in Services OU
+          community.general.ldap_search:
+            server_uri: "{{ ldap_uri }}"
+            bind_dn: "{{ bind_dn }}"
+            bind_pw: "{{ bind_password }}"
+            validate_certs: true
+            dn: "{{ services_ou }}"
+            scope: "onelevel"
+            filter: "(objectClass=posixAccount)"
+            attrs:
+              - uid
+              - cn
+              - nsAccountLock
+              - passwordRetryCount
+              - accountUnlockTime
+          register: service_accounts
+      rescue:
+        - name: Handle empty Services OU
+          ansible.builtin.set_fact:
+            service_accounts:
+              results: []
+      when: check_services | bool
+
+    # =========================================================================
+    # COMBINE AND ANALYZE RESULTS
+    # =========================================================================
+
+    - name: Combine all accounts
+      ansible.builtin.set_fact:
+        all_accounts: >-
+          {{ people_accounts.results | default([])
+             + (service_accounts.results | default([])) }}
+
+    # Filter for administratively locked accounts
+    # An account is locked when nsAccountLock attribute exists and is "true"
+    #
+    # selectattr('nsAccountLock', 'defined') — keeps only entries that HAVE this attribute
+    # Then we check if the value equals "true" (case-insensitive handled below)
+    - name: Identify administratively locked accounts
+      ansible.builtin.set_fact:
+        admin_locked: >-
+          {{ all_accounts
+             | selectattr('nsAccountLock', 'defined')
+             | list }}
+
+    # Filter for accounts with failed login attempts
+    # passwordRetryCount > 0 indicates at least one failed attempt
+    - name: Identify accounts with failed login attempts
+      ansible.builtin.set_fact:
+        failed_attempts: >-
+          {{ all_accounts
+             | selectattr('passwordRetryCount', 'defined')
+             | list }}
+
+    # =========================================================================
+    # GENERATE REPORT
+    # =========================================================================
+
+    - name: Build locked accounts report header
+      ansible.builtin.set_fact:
+        locked_report:
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          - "LDAP Locked Accounts Report"
+          - "Server: {{ ldap_uri }}"
+          - "Date:   {{ lookup('pipe', 'date \"+%Y-%m-%d %H:%M:%S\"') }}"
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          - ""
+          - "ADMINISTRATIVELY LOCKED (nsAccountLock=true):"
+      no_log: true
+
+    - name: Append locked account rows
+      ansible.builtin.set_fact:
+        locked_report: >-
+          {{
+            locked_report + [
+              '  [LOCKED] ' + ([item.uid] | flatten | first)
+                           + ' (' + ([item.cn] | flatten | first | default('N/A')) + ')',
+              '           DN: ' + item.dn,
+              '           Failed attempts: ' + ([item.passwordRetryCount] | flatten | first | default('0') | string)
+            ]
+            + (['           Auto-unlock at: ' + ([item.accountUnlockTime] | flatten | first)]
+               if item.accountUnlockTime is defined else [])
+          }}
+      loop: "{{ admin_locked }}"
+      loop_control:
+        label: "{{ [item.uid] | flatten | first }}"
+      when: admin_locked | length > 0
+      no_log: true
+
+    - name: Append failed attempts section
+      ansible.builtin.set_fact:
+        locked_report: >-
+          {{
+            locked_report
+            + (['  None — no accounts are administratively locked.'] if admin_locked | length == 0 else [])
+            + ['', 'ACCOUNTS WITH FAILED LOGIN ATTEMPTS:']
+          }}
+      no_log: true
+
+    - name: Append failed attempt rows
+      ansible.builtin.set_fact:
+        locked_report: >-
+          {{
+            locked_report + [
+              '  [WARN] ' + ([item.uid] | flatten | first)
+                         + ' — ' + ([item.passwordRetryCount] | flatten | first | string) + ' failed attempt(s)'
+            ]
+            + (['         Auto-unlock at: ' + ([item.accountUnlockTime] | flatten | first)]
+               if item.accountUnlockTime is defined else [])
+          }}
+      loop: "{{ failed_attempts }}"
+      loop_control:
+        label: "{{ [item.uid] | flatten | first }}"
+      when: failed_attempts | length > 0
+      no_log: true
+
+    - name: Append report footer
+      ansible.builtin.set_fact:
+        locked_report: >-
+          {{
+            locked_report
+            + (['  None — no failed login attempts recorded.'] if failed_attempts | length == 0 else [])
+            + ['',
+               '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+               'SUMMARY:',
+               '  Total accounts scanned:     ' + (all_accounts | length | string),
+               '  Administratively locked:    ' + (admin_locked | length | string),
+               '  With failed login attempts: ' + (failed_attempts | length | string),
+               '  OUs checked:                People' + (' + Services' if check_services | bool else ''),
+               '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━']
+          }}
+      no_log: true
+
+    - name: Display locked accounts report
+      ansible.builtin.debug:
+        msg: "{{ locked_report }}"
+
+    # =========================================================================
+    # ACTIONABLE OUTPUT
+    # =========================================================================
+    # If there are locked accounts, provide the unlock command
+
+    - name: Provide unlock instructions
+      ansible.builtin.debug:
+        msg:
+          - "To unlock accounts, run:"
+          - "  ansible-playbook ldap-lock-user.yml -e 'uid=<username> action=unlock'"
+          - "  OR"
+          - "  ./ldap-lock-user.sh -u <username> -U"
+      when: admin_locked | length > 0
