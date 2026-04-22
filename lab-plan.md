@@ -271,7 +271,7 @@ Each exercise has an identifier `LAB-XX` and follows this structure:
 - `services/ldap/scripts/ansible/` — Equivalent Ansible playbooks using community.general.ldap_entry/ldap_attrs
 - `services/ldap/scripts/README.md`
 
-**Conflict note:** SSSD configuration on ubuntu-ws01 will conflict with LAB-05 (SSSD for AD). Before starting LAB-05, restore ubuntu-ws01 to its pre-LAB-04 snapshot. Restore rhel-srv01 to its post-LAB-01 snapshot (pre-LAB-04 state) to remove 389DS. repo-srv01 SSSD-LDAP configuration does not conflict with later labs (LAB-07/08) and can remain.
+**Conflict note:** SSSD-LDAP configuration on `ubuntu-ws01` conflicts with LAB-05 (SSSD for AD) and must be removed by restoring the pre-LAB-04 snapshot. `rhel-srv01` must also be restored to its post-LAB-01 snapshot before LAB-05 — not because of SSSD, but to remove 389DS, Cockpit, custom LDAP TLS/CA trust, and the rest of the LAB-04 state while preserving BIND and conditional forwarding. Before running `realm discover`, verify that both Linux machines resolve `lab.local` through `rhel-srv01` and that time synchronisation is healthy before joining the domain. `repo-srv01` can keep the SSSD-LDAP configuration because it is not used in LAB-05/LAB-06.
 
 ---
 
@@ -279,37 +279,33 @@ Each exercise has an identifier `LAB-XX` and follows this structure:
 
 #### LAB-05: Linux-AD integration with SSSD/realmd
 
-**Scenario:** Both `rhel-srv01` and `ubuntu-ws01` are joined to the `lab.local` AD domain using SSSD and realmd. Login access is restricted to specific AD groups. The entire management workflow — OU structure, group membership, GPO — is conducted from `win-mgmt01` using RSAT and PowerShell, mirroring how Centrify-managed environments operate. The exercise concludes with a written Centrify-vs-SSSD comparison document.
+**Scenario:** Both `rhel-web01` and `ubuntu-ws02` are joined to the `lab.local` AD domain using `realmd` and SSSD while continuing to use the Linux DNS path established in LAB-01 (`rhel-srv01` BIND for `linux.lab.local`, conditional forwarding to AD DNS for `lab.local`). Login access is restricted to dedicated AD groups, automatic home directory creation is enabled, and GPO-based access control is validated from `win-mgmt01` using RSAT and PowerShell, mirroring how Centrify-managed environments operate. The exercise concludes with a written Centrify-vs-SSSD comparison document.
 
-**Goal:** Join RHEL and Ubuntu to the AD domain, emulating Centrify workflow.
+**Goal:** Join RHEL and Ubuntu to the AD domain with `realmd` + SSSD, using Windows-side group and GPO management to emulate a Centrify-style workflow.
 
 **Gap remedy:** G1 — Centrify / Linux-AD integration
 
-**Machines:** rhel-srv01, ubuntu-ws01, win-mgmt01
+**Machine:** rhel-web01, ubuntu-ws02, win-mgmt01, win-dc01
 
-**Prerequisite state:** Restore rhel-srv01 to the post-LAB-01 snapshot (before LAB-04 SSSD-LDAP changes) — SSSD must not be pre-configured. ubuntu-ws01 post-LAB-00 (fresh). Take Proxmox snapshots of rhel-srv01 and ubuntu-ws01 before starting. After this lab both machines are AD-joined — take a new snapshot of each ("post-LAB-05") before proceeding to LAB-06.
+**Prerequisite state:** `win-dc01` and `win-mgmt01` remain in their post-LAB-00 AD-ready state. Prepare `rhel-web01` as a full VM in a clean pre-LAB-05 state so no previous AD join or leftover SSSD / `realmd` client configuration affects the rerun. Prepare `ubuntu-ws02` as a full VM for its first LAB-05 run. Verify on both Linux machines that `lab.local` resolves through `rhel-srv01` and that time synchronisation is healthy before joining the domain. Take Proxmox snapshots of `rhel-web01` and `ubuntu-ws02` before starting. After this lab both machines are AD-joined — take a new snapshot of each ("post-LAB-05") before proceeding to LAB-06.
 
 **Steps:**
-1. Install AD integration packages on rhel-srv01 (realmd, sssd, adcli, samba-common)
-2. Discover and join the domain on rhel-srv01; configure SSSD identity and access providers
-3. Restrict login to designated AD groups; configure automatic home directory creation
-4. Repeat domain join and SSSD configuration on ubuntu-ws01
-5. From win-mgmt01: create OU for Linux servers, create Linux admin/user groups, assign test users
-6. Configure a GPO for the Linux Servers OU via GPMC
-7. Verify end-to-end: AD user login on both Linux machines via SSH
+1. Verify DNS and time synchronisation prerequisites on rhel-web01; install AD integration packages (`realmd`, `sssd`, `adcli`, `samba-common`, `oddjob-mkhomedir`, `authselect`)
+2. Discover and join the domain on rhel-web01; verify Kerberos, `realm list`, generated SSSD configuration, and computer object creation
+3. From win-mgmt01: create OU for Linux systems, create Linux admin/user groups, assign test users, and move `rhel-web01` into the OU
+4. Restrict login on rhel-web01 to designated AD groups; configure automatic home directory creation and validate group-based access
+5. Verify DNS and time synchronisation on ubuntu-ws02; install packages, join the domain, configure SSSD/PAM for AD login, and then move `ubuntu-ws02` into the Linux Systems OU from win-mgmt01
+6. Configure a GPO for the Linux Systems OU via GPMC; validate SSSD GPO-based access control on both Linux hosts
+7. Verify end-to-end: allowed AD user login on both Linux machines via SSH; `id`/`groups`/home directory checks; deny test for a non-allowed account
 8. Write `centrify-vs-sssd.md` comparing Centrify DirectControl ↔ SSSD/realmd feature by feature
 
 **Documentation:**
+- `notes/lab-05-linux-ad.md`
 - `ad-integration/README.md`
 - `ad-integration/sssd.conf.example`
 - `ad-integration/join-domain-rhel.sh`
 - `ad-integration/join-domain-ubuntu.sh`
-- `ad-integration/centrify-vs-sssd.md` ← key document for interview!
-
-**Interview questions:**
-- "Describe how you would integrate Linux with Active Directory"
-- "What is your experience with Centrify?"
-- "How do you control which AD users can log into Linux?"
+- `ad-integration/centrify-vs-sssd.md`
 
 ---
 

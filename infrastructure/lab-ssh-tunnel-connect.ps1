@@ -31,6 +31,7 @@ $LinuxSSHHosts = @(
     [PSCustomObject]@{ Name = "rhel-srv01";  IP = "10.10.10.20"; User = "root" },
     [PSCustomObject]@{ Name = "rhel-web01";  IP = "10.10.10.21"; User = "root" },
     [PSCustomObject]@{ Name = "ubuntu-ws01"; IP = "10.10.10.30"; User = "root" },
+    [PSCustomObject]@{ Name = "ubuntu-ws02"; IP = "10.10.10.31"; User = "root" },
     [PSCustomObject]@{ Name = "ipa-srv01";   IP = "10.10.10.40"; User = "root" },
     [PSCustomObject]@{ Name = "repo-srv01";  IP = "10.10.10.50"; User = "root" }
 )

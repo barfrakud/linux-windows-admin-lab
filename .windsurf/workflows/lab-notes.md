@@ -45,7 +45,7 @@ Przed zapisaniem lub aktualizacją notatek w plikach `notes/lab-XX-*.md` przestr
    ### Conclusion
 
    #### What - Co zrobiłem?
-   [Krótko, konkretnie — co zostało wykonane w tym kroku: jakie pliki, komendy, konfiguracje]
+   [Krótko, konkretnie — co zostało wykonane w tym kroku: jakie pliki, komendy, konfiguracje. To jest główne podsumowanie wykonanej pracy w tym kroku.]
 
    ---
    #### Why - Dlaczego to zrobiłem?
@@ -64,6 +64,8 @@ Przed zapisaniem lub aktualizacją notatek w plikach `notes/lab-XX-*.md` przestr
    [Opis napotkanego problemu i jego rozwiązania, lub informacja że problemów nie było]
    ```
    Zasady:
+   - `What - Co zrobiłem?` to główne miejsce na opis wykonanej pracy w danym kroku
+   - `Notes` mają być krótkie i zawierać tylko rzeczy nieoczekiwane, cechy środowiska, odchylenia od planu lub obserwacje operacyjne
    - Treść Conclusion pisz po polsku
    - Charakter edukacyjny — notatka ma utrwalać wiedzę, nie tylko dokumentować czynności
    - Lesson Learned powinien zawierać techniczne wyjaśnienia (dlaczego coś działa tak a nie inaczej)
@@ -93,8 +95,9 @@ Gdy użytkownik poprosi o zapisanie notatek lub aktualizację postępu:
 
 1. Przeczytaj aktualną zawartość pliku notatek dla danego LAB-u.
 2. Zidentyfikuj sekcję do uzupełnienia na podstawie numeru kroku z planu.
-3. Przepisz lub uzupełnij treść zgodnie z zasadami stylu powyżej.
-4. Oznacz ukończony krok jako ✅.
-5. Nie usuwaj sekcji przyszłych kroków — zostaw je z komentarzem TODO.
-6. Zachowaj sens logiczny i poprawną pisownię.
-7. Gdy napotkasz dane jak hasła to nie usuwaj ich. To jest lab więc hasła są celowo tutaj umieszczone.
+3. Jeśli potrzebujesz punktu odniesienia dla struktury, użyj `notes/lab-template.md`.
+4. Przepisz lub uzupełnij treść zgodnie z zasadami stylu powyżej.
+5. Oznacz ukończony krok jako ✅.
+6. Nie usuwaj sekcji przyszłych kroków — zostaw je z komentarzem TODO.
+7. Zachowaj sens logiczny i poprawną pisownię.
+8. Gdy napotkasz dane jak hasła to nie usuwaj ich. To jest lab więc hasła są celowo tutaj umieszczone.
